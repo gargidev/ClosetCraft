@@ -53,13 +53,13 @@ python train_classifier.py --data-dir ./data/dataset --epochs 8 --batch-size 16
 
 The script saves the trained head, class labels, and validation metrics under `ml-service/app/models/`. Review the metrics and test on independent images before using it in a demonstration.
 
-## Deployment
+## Deployment (strict $0 budget)
 
-[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/gargidev/ClosetCraft)
+The repository includes a [Vercel frontend preview configuration](vercel.json). Follow [the zero-billing deployment guide](docs/FREE_DEPLOYMENT.md) before deploying.
 
-Use the button to create the services from [`render.yaml`](render.yaml). This is a **deployment setup link**, not a live application URL. Render will generate the actual frontend/API URLs after you connect your account and approve the Blueprint. See [Render deployment instructions](docs/RENDER_DEPLOYMENT.md).
+**Important:** This configuration deploys only the React/Vite frontend preview. The current Express API uses in-memory Maps, the Prisma schema is not wired into route handlers, Supabase Storage is not integrated, and the separate PyTorch ML service is not hosted by Vercel. Do not treat the preview as a complete working production app.
 
-**Live deployment status:** No live application URL has been verified yet. Do not treat an old upstream fork's demo URL as this repository's live application.
+Google Cloud Run and the previous paid Render Blueprint have been intentionally removed from the deployment path because a strict no-charge requirement cannot be guaranteed by metered hosting.
 
 ## Security
 
