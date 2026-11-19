@@ -53,9 +53,13 @@ python train_classifier.py --data-dir ./data/dataset --epochs 8 --batch-size 16
 
 The script saves the trained head, class labels, and validation metrics under `ml-service/app/models/`. Review the metrics and test on independent images before using it in a demonstration.
 
-## Deployment status
+## Deployment
 
-**No live deployment URL has been verified yet.** The repository contains Docker deployment assets and a deployment guide, but a public URL requires hosting-provider setup, environment secrets, database migrations, and a successful end-to-end smoke test. Do not treat an old upstream fork's demo URL as this repository's live application.
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/gargidev/ClosetCraft)
+
+Use the button to create the services from [`render.yaml`](render.yaml). This is a **deployment setup link**, not a live application URL. Render will generate the actual frontend/API URLs after you connect your account and approve the Blueprint. See [Render deployment instructions](docs/RENDER_DEPLOYMENT.md).
+
+**Live deployment status:** No live application URL has been verified yet. Do not treat an old upstream fork's demo URL as this repository's live application.
 
 ## Security
 
