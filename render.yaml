@@ -7,13 +7,14 @@ databases:
     plan: basic-256mb
 
 services:
-  - type: pserv
+  - type: web
     name: closet-craft-ml
     runtime: docker
     rootDir: ml-service
     dockerfilePath: ./Dockerfile
     dockerContext: .
     plan: 2c-4g
+    healthCheckPath: /health
 
   - type: web
     name: closet-craft-api
@@ -35,7 +36,10 @@ services:
           name: closet-craft-db
           property: connectionString
       - key: ML_SERVICE_URL
-        value: http://closet-craft-ml:8000
+        fromService:
+          type: web
+          name: closet-craft-ml
+          property: host
       - key: JWT_SECRET
         generateValue: true
       - key: UPLOAD_DIR
