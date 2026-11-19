@@ -22,7 +22,7 @@ export function createApp() {
   const configuredFrontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
   const frontendOrigin = /^https?:\/\//i.test(configuredFrontendUrl)
     ? configuredFrontendUrl
-    : \`https://\${configuredFrontendUrl}\`;
+    : 'https://' + configuredFrontendUrl;
   app.use(
     cors({
       origin: frontendOrigin,
