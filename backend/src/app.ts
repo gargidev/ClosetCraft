@@ -19,9 +19,13 @@ import { openApiSpec } from './openapi';
 export function createApp() {
   const app = express();
   app.use(helmet({ contentSecurityPolicy: false }));
+  const configuredFrontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+  const frontendOrigin = /^https?:\\/\\//i.test(configuredFrontendUrl)
+    ? configuredFrontendUrl
+    : `https://${configuredFrontendUrl}`;
   app.use(
     cors({
-      origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+      origin: frontendOrigin,
       credentials: true
     })
   );
