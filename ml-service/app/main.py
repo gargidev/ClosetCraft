@@ -1,23 +1,25 @@
-from fastapi import FastAPI
+from __future__ import annotations
+
+import base64
+import binascii
+import io
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from PIL import Image, UnidentifiedImageError
 from app.schemas.models import (
-    OutfitRecommendationRequest,
-    RecommendationResponse,
-    AccessoryRequest,
-    AccessoryResponse,
-    ClassificationRequest,
-    ClassificationResponse,
-    FeedbackRequest,
+    OutfitRecommendationRequest, RecommendationResponse,
+    AccessoryRequest, AccessoryResponse, ClassificationRequest,
+    ClassificationResponse, FeedbackRequest,
 )
 from app.recommendation.engine import OutfitRecommendationEngine
 from app.models.clip_service import CLIPEmbeddingService
+from app.models.garment_classifier import GarmentImageClassifier
 
 app = FastAPI(
     title="Closet Craft ML Recommendation Service",
-    description="AI Outfit Recommendation, CLIP ViT-B/32 Visual Embeddings & Multi-factor Ranking Engine",
-    version="2.0.0",
+    description="Image-based garment classification and outfit recommendation",
+    version="2.1.0",
 )
-
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -28,17 +30,7 @@ app.add_middleware(
 
 engine = OutfitRecommendationEngine()
 clip = CLIPEmbeddingService()
-
-COLOR_HINTS = [
-    ("black", "#18181B", "Jet Black"),
-    ("white", "#FFFFFF", "Ivory White"),
-    ("cream", "#FDF6EC", "Ivory Cream"),
-    ("beige", "#E5D3B3", "Warm Beige"),
-    ("pink", "#F8BBD0", "Pastel Pink"),
-    ("blue", "#93C5FD", "Light Blue"),
-    ("green", "#A5B5A0", "Muted Sage"),
-    ("rose", "#D6A6A1", "Dusty Rose"),
-]
+classifier = GarmentImageClassifier(clip)
 
 
 @app.get("/health")
@@ -46,12 +38,12 @@ def health_check():
     return {
         "status": "healthy",
         "service": "closet-craft-ml",
-        "pytorch_version": clip.torch_version,
         "clip_model": clip.model_name,
         "clip_loaded": clip.is_loaded,
+        "image_classifier_available": classifier.is_available,
+        "supervised_head_loaded": classifier.head is not None,
         "device": clip.device,
         "ranking_weights": engine.weights,
-        "fallback": not clip.is_loaded,
     }
 
 
@@ -62,6 +54,46 @@ def compute_embedding(data: dict):
     return {"model": clip.model_name, "dimensions": len(vector), "embedding": vector, "clip_loaded": clip.is_loaded}
 
 
+def _decode_image(value: str) -> Image.Image:
+    if not value:
+        raise HTTPException(status_code=400, detail="Provide image_base64_or_url as a base64 data URL or raw base64 string.")
+    if value.startswith("data:"):
+        try:
+            header, value = value.split(",", 1)
+            if ";base64" not in header:
+                raise ValueError("Only base64 data URLs are supported")
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+    # Remote URLs are intentionally not fetched here: accepting arbitrary URLs
+    # can create SSRF vulnerabilities. The API accepts base64 image content.
+    try:
+        raw = base64.b64decode(value, validate=True)
+        if len(raw) > 10 * 1024 * 1024:
+            raise HTTPException(status_code=413, detail="Image exceeds the 10 MB limit.")
+        image = Image.open(io.BytesIO(raw))
+        image.verify()
+        image = Image.open(io.BytesIO(raw)).convert("RGB")
+        if image.width < 32 or image.height < 32:
+            raise HTTPException(status_code=400, detail="Image is too small to classify.")
+        return image
+    except (binascii.Error, UnidentifiedImageError, OSError, ValueError):
+        raise HTTPException(status_code=400, detail="Invalid image. Upload a valid JPG, PNG, or WEBP photo.")
+
+
+@app.post("/classify-garment")
+def classify_garment(req: ClassificationRequest):
+    if not classifier.is_available:
+        raise HTTPException(
+            status_code=503,
+            detail="Image classification model is unavailable. Install ML dependencies and allow the CLIP checkpoint to load.",
+        )
+    image = _decode_image(req.image_base64_or_url)
+    try:
+        return classifier.classify(image)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Image classification failed: {type(exc).__name__}")
+
+
 @app.post("/recommend-outfits", response_model=RecommendationResponse)
 def recommend_outfits(req: OutfitRecommendationRequest):
     return engine.generate_recommendations(req)
@@ -70,45 +102,15 @@ def recommend_outfits(req: OutfitRecommendationRequest):
 @app.post("/recommend-accessories", response_model=AccessoryResponse)
 def recommend_accessories(req: AccessoryRequest):
     owned = [
-        a
-        for a in req.available_accessories
+        a for a in req.available_accessories
         if a.category.lower() in ["accessories", "bags", "jewellery", "sunglasses"]
+        and a.status.replace(" ", "").replace("_", "").lower() not in {"inlaundry", "washing", "drying", "damaged", "worn", "unavailable"}
     ]
     notes = [
         f"Selected matching pieces to harmonize with {', '.join(req.outfit_colors[:2]) if req.outfit_colors else 'your look'}.",
-        "Warm gold jewelry accents provide an elevated editorial touch.",
+        "Choose one focal accessory to keep the outfit balanced.",
     ]
     return AccessoryResponse(status="success", owned_accessories=owned[:3], suggested_styling_notes=notes)
-
-
-@app.post("/classify-garment", response_model=ClassificationResponse)
-def classify_garment(req: ClassificationRequest):
-    blob = (req.file_name or req.image_base64_or_url or "").lower()
-    category = "tops"
-    subcategory = "Blouse"
-    if any(k in blob for k in ["jean", "pant", "trouser", "skirt"]):
-        category, subcategory = "bottoms", "Trousers"
-    elif any(k in blob for k in ["dress", "gown", "kurti"]):
-        category, subcategory = "dresses", "Dress"
-    elif any(k in blob for k in ["shoe", "boot", "heel", "sneaker"]):
-        category, subcategory = "shoes", "Footwear"
-    elif any(k in blob for k in ["coat", "blazer", "jacket"]):
-        category, subcategory = "outerwear", "Outerwear"
-    color_name, color_hex = "Ivory Cream", "#FAF8F5"
-    for key, hex_code, name in COLOR_HINTS:
-        if key in blob:
-            color_name, color_hex = name, hex_code
-            break
-    return ClassificationResponse(
-        category=category,
-        subcategory=subcategory,
-        dominant_color=color_name,
-        color_hex=color_hex,
-        pattern="Solid",
-        style_tags=["Clean & Minimal", "Elegant", "Tailored"],
-        suitable_seasons=["Spring", "Summer", "Fall"],
-        confidence_score=0.92 if clip.is_loaded else 0.74,
-    )
 
 
 @app.post("/feedback")
@@ -118,5 +120,4 @@ def record_feedback(req: FeedbackRequest):
 
 if __name__ == "__main__":
     import uvicorn
-
     uvicorn.run(app, host="0.0.0.0", port=8000)
