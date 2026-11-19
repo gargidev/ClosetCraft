@@ -1,4 +1,8 @@
-const API = import.meta.env.VITE_API_URL || '';
+const configuredApiUrl = (import.meta.env.VITE_API_URL || '').trim();
+// Render's Blueprint injects the service host without a scheme; local Vite uses a relative URL.
+const API = configuredApiUrl
+  ? (/^https?:\\/\\//i.test(configuredApiUrl) ? configuredApiUrl : `https://${configuredApiUrl}`).replace(/\\/$/, '')
+  : '';
 
 export function token() {
   return localStorage.getItem('cc_token') || '';
